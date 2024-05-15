@@ -86,6 +86,11 @@ _loopStart = 0
 _loopLength = 0
 _loopInitial = True
 
+# ---
+_pedalPressStart = 0
+_pedalPressTimer = 0
+_pedalPressTimerMax = 2
+
 def SendNoteOff(i):
     midi.send(NoteOff(i, 127))
 
@@ -153,11 +158,12 @@ def UpdateRedLEDs():
         _ledRed[_selectedTrack - 1].value = True
 
 # i = (1 to 4)
-def SelectTrack(i):
+def SelectTrack(i, sendNote=False):
     global _selectedTrack
     _selectedTrack = i
     UpdateRedLEDs()
-    # SendNote(_midiNotes[i + 2], True)  # Select TRACK i
+    if sendNote:
+        SendNote(_midiNotes[i + 2], True)  # Select TRACK i
     print("Select TRACK", i)
 
 # i = (0=Rec, 1=Play)
@@ -170,6 +176,7 @@ def SetMode(i):
         print("REC MODE")
     elif _mode == 1:
         print("PLAY MODE")
+    SendNote(_midiNotes[0] - 2)
 
 def SendNote(i, _sendNoteOff=False):
     midi.send(NoteOn(i, 127))
@@ -201,7 +208,7 @@ def Clear():
         g.value = False
     for i in _ledState:  # Turn ON _stateLEDs
         i.value = True
-    SelectTrack(1)
+    SelectTrack(1, True)
     SetMode(0)
     global _trackMute
     if _trackMute[0]:
@@ -227,8 +234,9 @@ def ReleaseButton(i):
 
 # Toggles mute on TRACK[i]
 # i = (1 to 4)
-def ToggleMute(i):
-    # SendNote(_midiNotes[i + 2] + 12)  # Toggle mute TRACK i
+def ToggleMute(i, sendNote=False):
+    if sendNote:
+        SendNote(_midiNotes[i + 2] + 12)  # Toggle mute TRACK i
     _trackMute[i - 1] = not _trackMute[i - 1]  # Toggle bool[0]
     if _mode == 1:  # if in PLAYEMODE
         _ledGreen[i - 1].value = not _trackMute[i - 1]  # Toggle green LED
@@ -238,27 +246,16 @@ def ToggleMute(i):
 def UndoTrack(i=1):
     if _state == 0:
         return
-    _timer = 0
-    _maxTime = 100000
-    while not _btn[i + 4].value:
-        if _timer < _maxTime:
-            _timer += 1
-        else:
-            break
-    if _timer >= _maxTime:
-        _timer = _maxTime + 1
-        SendNote(_midiNotes[i + 2] + 24, True)  # Put LOOPER i in playmode
-        time.sleep(0.1)
-        SendNote(_midiNotes[i + 2] + 1, True)  # Undo LOOPER i
-        _ledRed[i - 1].value = False
-        time.sleep(0.5)
-        _ledRed[i - 1].value = True
-        if _state == 2:  # _state == OVERDUB
-            SendNote(_midiNotes[i + 2] + 25, True)  # Set LOOPER i back to OVERDUB
-        print("UNDO TRACK ", i)
-        SelectTrack(i)
-    else:
-        return
+    SendNote(_midiNotes[i + 2] + 24, True)  # Put LOOPER i in playmode
+    time.sleep(0.1)
+    SendNote(_midiNotes[i + 2] + 1, True)  # Undo LOOPER i
+    _ledRed[i - 1].value = False
+    time.sleep(0.5)
+    _ledRed[i - 1].value = True
+    if _state == 2:  # _state == OVERDUB
+        SendNote(_midiNotes[i + 2] + 25, True)  # Set LOOPER i back to OVERDUB
+    print("UNDO TRACK ", i)
+    SelectTrack(i)
 
 # Init
 print("Pedal BOOTED")
@@ -340,64 +337,72 @@ while True:
     # ----- ----- Track 1 ----- -----
     if not _btn[5].value:
         if _btnPressed[5] is False:
-            if _pedalTimer >= _pedalTimerMax:
-                _pedalTimer = 0
-                _btnPressed[5] = True
-                if _mode == 0:  # REC MODE
-                    SelectTrack(1)
-                    SendNote(_midiNotes[3], True)  # Select TRACK 1
+            _btnPressed[5] = True
+            _pedalPressStart = time.monotonic()
+            if _mode == 0:
+                SelectTrack(1, True)
+            elif _mode == 1:
+                ToggleMute(1, True)
+        else:
+            _pedalPressTimer = time.monotonic() - _pedalPressStart
+            if _pedalPressTimer >= _pedalPressTimerMax:
+                _btnPressed[5] = False
+                if _mode == 0:
                     UndoTrack(1)
-                elif _mode == 1:  # PLAY MODE
-                    ToggleMute(1)
-                    SendNote(_midiNotes[3] + 12)  # Toggle mute TRACK 1
     else:
         ReleaseButton(5)
 
     # ----- ----- Track 2 ----- -----
     if not _btn[6].value:
         if _btnPressed[6] is False:
-            if _pedalTimer >= _pedalTimerMax:
-                _pedalTimer = 0
-                _btnPressed[6] = True
-                if _mode == 0:  # REC MODE
-                    SelectTrack(2)
-                    SendNote(_midiNotes[4], True)  # Select TRACK 2
+            _btnPressed[6] = True
+            _pedalPressStart = time.monotonic()
+            if _mode == 0:
+                SelectTrack(2, True)
+            elif _mode == 1:
+                ToggleMute(2, True)
+        else:
+            _pedalPressTimer = time.monotonic() - _pedalPressStart
+            if _pedalPressTimer >= _pedalPressTimerMax:
+                _btnPressed[6] = False
+                if _mode == 0:
                     UndoTrack(2)
-                elif _mode == 1:  # PLAY MODE
-                    ToggleMute(2)
-                    SendNote(_midiNotes[4] + 12)  # Toggle mute TRACK 2
     else:
         ReleaseButton(6)
 
     # ----- ----- Track 3 ----- -----
     if not _btn[7].value:
         if _btnPressed[7] is False:
-            if _pedalTimer >= _pedalTimerMax:
-                _pedalTimer = 0
-                _btnPressed[7] = True
-                if _mode == 0:  # REC MDOE
-                    SelectTrack(3)
-                    SendNote(_midiNotes[5], True)  # Select TRACK 3
+            _btnPressed[7] = True
+            _pedalPressStart = time.monotonic()
+            if _mode == 0:
+                SelectTrack(3, True)
+            elif _mode == 1:
+                ToggleMute(3, True)
+        else:
+            _pedalPressTimer = time.monotonic() - _pedalPressStart
+            if _pedalPressTimer >= _pedalPressTimerMax:
+                _btnPressed[7] = False
+                if _mode == 0:
                     UndoTrack(3)
-                elif _mode == 1:  # PLAY MODE
-                    ToggleMute(3)
-                    SendNote(_midiNotes[5] + 12)  # Toggle mute TRACK 3
     else:
         ReleaseButton(7)
 
     # ----- ----- Track 4 ----- -----
     if not _btn[8].value:
         if _btnPressed[8] is False:
-            if _pedalTimer >= _pedalTimerMax:
-                _pedalTimer = 0
-                _btnPressed[8] = True
-                if _mode == 0:  # REC MODE
-                    SelectTrack(4)
-                    SendNote(_midiNotes[6], True)  # Select TRACK 4
+            _btnPressed[8] = True
+            _pedalPressStart = time.monotonic()
+            if _mode == 0:
+                SelectTrack(4, True)
+            elif _mode == 1:
+                ToggleMute(4, True)
+        else:
+            _pedalPressTimer = time.monotonic() - _pedalPressStart
+            if _pedalPressTimer >= _pedalPressTimerMax:
+                _btnPressed[8] = False
+                if _mode == 0:
                     UndoTrack(4)
-                elif _mode == 1:  # PLAY MODE
-                    ToggleMute(4)
-                    SendNote(_midiNotes[6] + 12)  # Toggle mute TRACK 4
     else:
         ReleaseButton(8)
 
