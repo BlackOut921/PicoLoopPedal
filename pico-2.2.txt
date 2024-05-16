@@ -125,12 +125,27 @@ def SetState(i):
         return
 
 def NextState():
+    # Return out of function if timer < max
+    global _loopStart
+    global _loopInitial
+    global _loopLength
+    global _recPedalTimer
+    global _recPedalTimerMax
+    if _state != 0:
+        if _recPedalTimer < _recPedalTimerMax:
+            return
     SendNote(_midiNotes[1])
+    _recPedalTimer = 0
     if _state == 0:  # None
         SetState(1)  # Switch to record
+        _loopStart = time.monotonic()
         return
     if _state == 1:  # Record
         SetState(2)  # Switch to overdub
+        if _loopInitial is True:
+            _loopInitial = False
+            _loopLength = time.monotonic() - _loopStart
+            print("_loopLength = ", _loopLength)
         return
     if _state == 2:  # Overdub
         SetState(3)  # Switch to play
@@ -158,7 +173,7 @@ def UpdateRedLEDs():
         _ledRed[_selectedTrack - 1].value = True
 
 # i = (1 to 4)
-def SelectTrack(i, sendNote=False):
+def SelectTrack(i, sendNote=True):
     global _selectedTrack
     _selectedTrack = i
     UpdateRedLEDs()
@@ -167,7 +182,7 @@ def SelectTrack(i, sendNote=False):
     print("Select TRACK", i)
 
 # i = (0=Rec, 1=Play)
-def SetMode(i):
+def SetMode(i, sendNote=True):
     global _mode
     _mode = i
     UpdateRedLEDs()
@@ -176,7 +191,8 @@ def SetMode(i):
         print("REC MODE")
     elif _mode == 1:
         print("PLAY MODE")
-    SendNote(_midiNotes[0] - 2)
+    if sendNote:
+        SendNote(_midiNotes[0] - 2)
 
 def SendNote(i, _sendNoteOff=False):
     midi.send(NoteOn(i, 127))
@@ -194,10 +210,10 @@ def Stop():
 
 def Clear():
     global _loopStart
-    _loopStart = 0
     global _loopLength
-    _loopLength = 0
     global _loopInitial
+    _loopStart = 0
+    _loopLength = 0
     _loopInitial = True
     Stop()
     SendNote(_midiNotes[0], True)  # Clear
@@ -208,8 +224,8 @@ def Clear():
         g.value = False
     for i in _ledState:  # Turn ON _stateLEDs
         i.value = True
-    SelectTrack(1, True)
-    SetMode(0)
+    SelectTrack(1)
+    SetMode(0, False)
     global _trackMute
     if _trackMute[0]:
         SendNote(_midiNotes[3] + 12, True)  # Unmute TRACK 1
@@ -292,17 +308,8 @@ while True:
     # ----- ----- REC/PLAY ----- -----
     if not _btn[1].value:
         if _btnPressed[1] is False:
-            if _recPedalTimer >= _recPedalTimerMax:
-                _btnPressed[1] = True
-                _recPedalTimer = 0
-                NextState()
-                if _state == 1:  # REC
-                    _loopStart = time.monotonic()
-                if _state == 2:  # OVERDUB
-                    if _loopInitial is True:
-                        _loopInitial = False
-                        _loopLength = time.monotonic() - _loopStart
-                        print("_loopLength = ", _loopLength)
+            _btnPressed[1] = True
+            NextState()
     else:
         ReleaseButton(1)
 
@@ -340,7 +347,7 @@ while True:
             _btnPressed[5] = True
             _pedalPressStart = time.monotonic()
             if _mode == 0:
-                SelectTrack(1, True)
+                SelectTrack(1)
             elif _mode == 1:
                 ToggleMute(1, True)
         else:
@@ -358,7 +365,7 @@ while True:
             _btnPressed[6] = True
             _pedalPressStart = time.monotonic()
             if _mode == 0:
-                SelectTrack(2, True)
+                SelectTrack(2)
             elif _mode == 1:
                 ToggleMute(2, True)
         else:
@@ -376,7 +383,7 @@ while True:
             _btnPressed[7] = True
             _pedalPressStart = time.monotonic()
             if _mode == 0:
-                SelectTrack(3, True)
+                SelectTrack(3)
             elif _mode == 1:
                 ToggleMute(3, True)
         else:
@@ -394,7 +401,7 @@ while True:
             _btnPressed[8] = True
             _pedalPressStart = time.monotonic()
             if _mode == 0:
-                SelectTrack(4, True)
+                SelectTrack(4)
             elif _mode == 1:
                 ToggleMute(4, True)
         else:
@@ -409,6 +416,12 @@ while True:
     msg = midi.receive()
     if msg is not None:
         if isinstance(msg, NoteOn):
+            if msg.note == _midiNotes[0]:  # CLEAR
+                Clear()
+            if msg.note == _midiNotes[1]:  # REC/OVERDUB/PLAY
+                NextState()
+            if msg.note == _midiNotes[2]:  # STOP
+                Stop()
             if msg.note == _midiNotes[0] - 2:  # Change MODE
                 if _mode == 0:
                     SetMode(1)
